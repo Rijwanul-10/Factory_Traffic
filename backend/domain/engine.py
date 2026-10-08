@@ -636,8 +636,17 @@ class JunctionEngine:
                 self.active_manual = None
                 self.manual_hold_start = None
 
-            if self.mode == JunctionMode.MANUAL:
-                self._set_mode(JunctionMode.AUTOMATIC, "Return to automatic by admin")
+            if self.mode in (JunctionMode.MANUAL, JunctionMode.FAILURE):
+                if self.controller_status == ControllerStatus.ONLINE:
+                    self._set_mode(JunctionMode.AUTOMATIC, "Return to automatic by admin")
+                    if self.actual_signals.is_all_red():
+                        next_phase = self._choose_next_phase() or self.current_phase
+                        commands.extend(self.initialize_green(next_phase))
+                    else:
+                        cmd = self._create_command(SignalState.all_red())
+                        commands.append(cmd)
+                else:
+                    return cmd_id, CommandStatus.REJECTED, commands
 
             return cmd_id, CommandStatus.COMPLETED, commands
 
@@ -1035,6 +1044,22 @@ class JunctionEngine:
             new_state=str(self.actual_signals.as_dict()),
         )
 
+        # Recovery transition out of FAILURE mode once ALL_RED is safely acknowledged
+        if self.mode == JunctionMode.FAILURE and self.controller_status == ControllerStatus.ONLINE:
+            if self.actual_signals.is_all_red():
+                self._set_mode(JunctionMode.AUTOMATIC, "Recovery confirmed ALL_RED; resuming automatic")
+                self.current_step_type = None
+
+        # Resuming sequencing from confirmed ALL_RED (e.g. after restart or failure recovery)
+        if self.mode == JunctionMode.AUTOMATIC and self.current_step_type is None and self.actual_signals.is_all_red():
+            if self.emergency_queue:
+                commands.extend(self._serve_next_emergency())
+            elif self.manual_queue:
+                commands.extend(self._serve_next_manual())
+            else:
+                next_phase = self._choose_next_phase() or self.current_phase
+                commands.extend(self.initialize_green(next_phase))
+
         return commands
 
     def process_controller_status(self, status: ControllerStatus) -> list[PendingCommand]:
@@ -1051,15 +1076,18 @@ class JunctionEngine:
             if self.mode != JunctionMode.FAILURE:
                 self._set_mode(JunctionMode.FAILURE, "Controller offline")
                 self.desired_signals = SignalState.all_red()
+                self.in_transition = False
+                self.transition_plan = None
+                self.current_step_type = None
 
-        elif status == ControllerStatus.ONLINE and old_status != ControllerStatus.ONLINE:
+        elif status == ControllerStatus.ONLINE and (old_status != ControllerStatus.ONLINE or self.mode == JunctionMode.FAILURE):
             self._audit(
                 AuditEventType.CONTROLLER_ONLINE,
                 reason="Controller reconnected",
             )
-            # Go through ALL_RED first, then resume
-            signals = SignalState.all_red()
-            commands.extend(self._set_desired_signals(signals, "Controller reconnect: ALL_RED"))
+            # Re-issue ALL_RED command to verify hardware state before resuming
+            cmd = self._create_command(SignalState.all_red())
+            commands.append(cmd)
 
         return commands
 
@@ -1215,7 +1243,7 @@ class JunctionEngine:
             alerts.append("Controller OFFLINE")
         if self.controller_status == ControllerStatus.DEGRADED:
             alerts.append("Controller DEGRADED")
-        if self.desired_signals != self.actual_signals:
+        if self.desired_signals != self.actual_signals and not self.pending_commands:
             alerts.append(f"Signal mismatch: desired={self.desired_signals.as_dict()}, actual={self.actual_signals.as_dict()}")
         for d, s in self.direction_sensor_status.items():
             if s != ControllerStatus.ONLINE:

@@ -164,6 +164,10 @@ export default function SimulationForm({ junctionId = 'A', onActionSuccess, pend
       case 3: // Emergency Preemption
         await handleArrival('EMERGENCY', 'EAST', 'AMBULANCE-911');
         break;
+      case 4: // Stale Emergency
+        await handleArrival('EMERGENCY', 'WEST', 'STALE-AMB');
+        showFeedback('success', 'Scenario 4: Dispatched emergency vehicle STALE-AMB (auto-drops after 60s nominal if not cleared)');
+        break;
       case 5: // Duplicate Event
         const dupId = `VH-DUP-${Math.floor(Math.random() * 900)}`;
         const fixedEvtId = `evt-fixed-${Date.now()}`;
@@ -200,8 +204,17 @@ export default function SimulationForm({ junctionId = 'A', onActionSuccess, pend
         showFeedback('success', 'Scenario 5: Submitted exact duplicate event_id!');
         onActionSuccess?.();
         break;
+      case 6: // Starvation Override
+        await handleArrival('TRUCK', 'EAST', 'STARVE-TRK');
+        await handleArrival('EMPLOYEE_VEHICLE', 'EAST', 'STARVE-EMP');
+        showFeedback('success', 'Scenario 6: Injected conflicting queue to demonstrate starvation protection');
+        break;
       case 7: // Controller Offline
         await handleControllerStatus('OFFLINE');
+        break;
+      case 8: // Controller Reconnect & Safe Recovery
+        await handleControllerStatus('ONLINE');
+        showFeedback('success', 'Scenario 8: Controller reconnected; safe recovery initiated');
         break;
       case 9: // Concurrent Burst
         const t0 = handleArrival('TRUCK', 'NORTH', 'BURST-TRUCK');
@@ -252,7 +265,7 @@ export default function SimulationForm({ junctionId = 'A', onActionSuccess, pend
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '8px' }}>
           <button className="btn btn-glass" style={{ fontSize: '0.75rem', padding: '6px 8px' }} onClick={() => runPresetScenario(1)}>
-            1. Normal Traffic
+            1. Normal Flow
           </button>
           <button className="btn btn-glass" style={{ fontSize: '0.75rem', padding: '6px 8px' }} onClick={() => runPresetScenario(2)}>
             2. Priority Truck
@@ -260,11 +273,20 @@ export default function SimulationForm({ junctionId = 'A', onActionSuccess, pend
           <button className="btn btn-danger" style={{ fontSize: '0.75rem', padding: '6px 8px' }} onClick={() => runPresetScenario(3)}>
             <ShieldAlert size={14} /> 3. Emergency
           </button>
+          <button className="btn btn-glass" style={{ fontSize: '0.75rem', padding: '6px 8px', color: '#fbbf24' }} onClick={() => runPresetScenario(4)}>
+            4. Stale EMG
+          </button>
           <button className="btn btn-glass" style={{ fontSize: '0.75rem', padding: '6px 8px' }} onClick={() => runPresetScenario(5)}>
-            5. Duplicate Event
+            5. Duplicate Evt
+          </button>
+          <button className="btn btn-glass" style={{ fontSize: '0.75rem', padding: '6px 8px', color: '#a78bfa' }} onClick={() => runPresetScenario(6)}>
+            6. Starvation
           </button>
           <button className="btn btn-glass" style={{ fontSize: '0.75rem', padding: '6px 8px', color: '#f87171' }} onClick={() => runPresetScenario(7)}>
             7. Offline Fail
+          </button>
+          <button className="btn btn-glass" style={{ fontSize: '0.75rem', padding: '6px 8px', color: '#34d399' }} onClick={() => runPresetScenario(8)}>
+            8. Recover Online
           </button>
           <button className="btn btn-primary" style={{ fontSize: '0.75rem', padding: '6px 8px' }} onClick={() => runPresetScenario(9)}>
             9. Concurrent

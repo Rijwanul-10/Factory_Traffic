@@ -69,6 +69,16 @@ async def lifespan(app: FastAPI):
 
     engine = JunctionEngine(config=config, clock=RealClock())
 
+    # Create and start actor
+    actor = JunctionActor(
+        engine=engine,
+        repository=repository,
+        controller_port=controller,
+        tick_interval=0.05,
+    )
+    registry.register(actor)
+    actor.start()
+
     # Check for restart recovery
     waiting_vehicles = await repository.load_waiting_vehicles("A")
     if waiting_vehicles:
@@ -82,15 +92,8 @@ async def lifespan(app: FastAPI):
         for cmd in init_cmds:
             await controller.send_command(cmd)
 
-    # Create and start actor
-    actor = JunctionActor(
-        engine=engine,
-        repository=repository,
-        controller_port=controller,
-        tick_interval=0.05,
-    )
-    registry.register(actor)
-    actor.start()
+    # Persist initial startup audit events immediately
+    await actor._persist_audit_log()
 
     # Expose in app state
     app.state.repository = repository

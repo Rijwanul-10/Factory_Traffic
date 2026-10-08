@@ -251,17 +251,33 @@ export default function App() {
           borderColor: 'rgba(239, 68, 68, 0.6)',
           display: 'flex',
           alignItems: 'center',
+          justifyContent: 'space-between',
+          flexWrap: 'wrap',
           gap: '12px',
         }}>
-          <AlertTriangle size={24} color="#f87171" />
-          <div>
-            <div style={{ fontWeight: 800, color: '#f87171', fontSize: '0.95rem' }}>
-              SYSTEM IN FAILURE (DEGRADED) MODE
-            </div>
-            <div style={{ fontSize: '0.8rem', color: '#fca5a5' }}>
-              Controller unresponsive or offline • Signals set to ALL_RED safety state
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <AlertTriangle size={24} color="#f87171" />
+            <div>
+              <div style={{ fontWeight: 800, color: '#f87171', fontSize: '0.95rem' }}>
+                SYSTEM IN FAILURE (DEGRADED) MODE
+              </div>
+              <div style={{ fontSize: '0.8rem', color: '#fca5a5' }}>
+                {controllerStatus === 'OFFLINE'
+                  ? 'Controller offline • Set Controller ONLINE to resume automatic control'
+                  : 'Controller online • Signals held in ALL_RED safety state until resumed'}
+              </div>
             </div>
           </div>
+          {controllerStatus === 'ONLINE' && (
+            <button
+              className="btn btn-primary"
+              style={{ fontSize: '0.8rem', padding: '6px 14px' }}
+              disabled={manualLoading}
+              onClick={handleReturnToAutomatic}
+            >
+              <RefreshCw size={14} /> Resume Automatic Mode
+            </button>
+          )}
         </div>
       )}
 
@@ -378,7 +394,7 @@ export default function App() {
             <button
               className="btn btn-primary"
               style={{ width: '100%' }}
-              disabled={manualLoading || mode === 'EMERGENCY' || mode === 'FAILURE'}
+              disabled={manualLoading || mode === 'EMERGENCY' || (mode === 'FAILURE' && controllerStatus !== 'ONLINE')}
               onClick={handleReturnToAutomatic}
             >
               <RefreshCw size={15} /> Return to Automatic

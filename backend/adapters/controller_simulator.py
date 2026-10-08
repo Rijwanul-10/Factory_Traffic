@@ -56,10 +56,15 @@ class RestSimulatorController(ControllerPort):
         self.command_history: dict[str, ControllerRecord] = {}
         self.last_command: Optional[PendingCommand] = None
         self._on_command_callback = None
+        self._on_ack_callback = None
 
     def set_command_callback(self, callback) -> None:
         """Register a callback for when a command is dispatched."""
         self._on_command_callback = callback
+
+    def set_ack_callback(self, callback) -> None:
+        """Register a callback for when an ACK is delivered (e.g. in auto_ack mode)."""
+        self._on_ack_callback = callback
 
     async def send_command(self, command: PendingCommand) -> None:
         """
@@ -89,7 +94,15 @@ class RestSimulatorController(ControllerPort):
     async def _schedule_auto_ack(self, command_id: str) -> None:
         if self.auto_ack_delay > 0:
             await asyncio.sleep(self.auto_ack_delay)
-        self.mark_acked(command_id)
+        if self.status == ControllerStatus.ONLINE:
+            self.mark_acked(command_id)
+            if self._on_ack_callback:
+                try:
+                    res = self._on_ack_callback(command_id)
+                    if asyncio.iscoroutine(res):
+                        await res
+                except Exception as e:
+                    logger.error(f"Error in controller ACK callback: {e}")
 
     def mark_acked(self, command_id: str, actual_state: Optional[SignalState] = None) -> bool:
         """Mark a command as acknowledged by the controller."""

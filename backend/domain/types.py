@@ -192,6 +192,15 @@ class SignalState:
     def all_red() -> "SignalState":
         return SignalState()
 
+    def is_all_red(self) -> bool:
+        """Check if all directions are RED."""
+        return (
+            self.north == SignalColor.RED
+            and self.south == SignalColor.RED
+            and self.east == SignalColor.RED
+            and self.west == SignalColor.RED
+        )
+
     @staticmethod
     def all_unknown() -> "SignalState":
         return SignalState(

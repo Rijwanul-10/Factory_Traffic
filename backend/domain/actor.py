@@ -63,6 +63,9 @@ class JunctionActor:
         self._running = False
         self._task: Optional[asyncio.Task] = None
 
+        if self.controller_port and hasattr(self.controller_port, "set_ack_callback"):
+            self.controller_port.set_ack_callback(self.handle_ack)
+
     @property
     def junction_id(self) -> str:
         return self.engine.config.junction_id

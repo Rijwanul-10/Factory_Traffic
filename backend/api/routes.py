@@ -308,11 +308,12 @@ async def submit_controller_event(
 
     elif st_upper in ("ONLINE", "OFFLINE", "DEGRADED"):
         c_status = ControllerStatus(st_upper)
-        await actor.handle_controller_status(c_status)
 
-        # Update controller simulator if attached
+        # Update controller simulator first so commands generated during status handling see new status
         if actor.controller_port and hasattr(actor.controller_port, "set_status"):
             actor.controller_port.set_status(c_status)
+
+        await actor.handle_controller_status(c_status)
 
         # Persist device status
         dev_id = f"ctrl-{payload.junction_id}"
