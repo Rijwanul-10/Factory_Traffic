@@ -341,6 +341,28 @@ class JunctionEngine:
         Orphan: CLEARED for unknown vehicle is rejected and audited.
         """
         commands: list[PendingCommand] = []
+        now = self.clock.now()
+
+        # Reject sensor timestamps far in the future (> 60s)
+        if event.timestamp > 0 and event.timestamp > now + 60.0:
+            self._audit(
+                AuditEventType.FUTURE_TIMESTAMP_REJECTED,
+                reason=f"Event timestamp {event.timestamp} is in the future (> now + 60s: {now + 60.0})",
+                direction=event.direction,
+                event_id=event.event_id,
+                vehicle_id=event.vehicle_id,
+            )
+            return EventProcessingResult.FUTURE_TIMESTAMP, commands
+
+        # Flag and audit very delayed events (> 120s past)
+        if event.timestamp > 0 and (now - event.timestamp) > 120.0:
+            self._audit(
+                AuditEventType.DELAYED_EVENT,
+                reason=f"Sensor event delayed by {now - event.timestamp:.1f}s",
+                direction=event.direction,
+                event_id=event.event_id,
+                vehicle_id=event.vehicle_id,
+            )
 
         # Duplicate check
         if event.event_id in self.processed_events:
@@ -359,6 +381,14 @@ class JunctionEngine:
         # Sequence check
         seq_key = f"{event.junction_id}_{event.direction.value}"
         last_seq = self.direction_sequence.get(seq_key, -1)
+        if event.sequence_no > 0 and last_seq > 0 and event.sequence_no < last_seq:
+            self._audit(
+                AuditEventType.OUT_OF_ORDER_EVENT,
+                reason=f"Out of order sequence_no {event.sequence_no} < last_seq {last_seq}",
+                direction=event.direction,
+                event_id=event.event_id,
+                vehicle_id=event.vehicle_id,
+            )
 
         if event.event_type == EventType.VEHICLE_ARRIVED:
             # Check if vehicle was already cleared (tombstone)
