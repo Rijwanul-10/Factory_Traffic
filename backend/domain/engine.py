@@ -275,15 +275,22 @@ class JunctionEngine:
         return sum(self.queue_count(d) for d in PHASE_DIRECTIONS[phase])
 
     def phase_is_empty(self, phase: Phase) -> bool:
+        # If any direction in this phase has a degraded/offline sensor, it cannot be considered empty
+        for d in PHASE_DIRECTIONS[phase]:
+            if self.direction_sensor_status.get(d) in (ControllerStatus.OFFLINE, ControllerStatus.DEGRADED):
+                return False
         return self.phase_queue_count(phase) == 0
 
     def all_queues_empty(self) -> bool:
+        if any(s in (ControllerStatus.OFFLINE, ControllerStatus.DEGRADED) for s in self.direction_sensor_status.values()):
+            return False
         return len(self.waiting_vehicles) == 0
 
     def phase_score(self, phase: Phase) -> float:
         """
         Score a phase for scheduling:
         sum(queue_counts) + sum(vehicle_priority_weights) + 0.5 * waiting_seconds
+        Degraded directions receive a baseline weight to ensure minimum fixed-time service.
         """
         now = self.clock.now()
         score = 0.0
@@ -293,6 +300,10 @@ class JunctionEngine:
                 score += VEHICLE_PRIORITY_WEIGHT.get(v.vehicle_type, 1)
                 wait_secs = now - v.arrived_at
                 score += 0.5 * wait_secs
+
+        for d in PHASE_DIRECTIONS[phase]:
+            if self.direction_sensor_status.get(d) in (ControllerStatus.OFFLINE, ControllerStatus.DEGRADED):
+                score += 3.0  # Baseline score guaranteeing periodic service
         return score
 
     def phase_max_wait(self, phase: Phase) -> float:
@@ -1090,6 +1101,29 @@ class JunctionEngine:
             commands.append(cmd)
 
         return commands
+
+    def process_sensor_status(self, direction: Direction, status: ControllerStatus) -> list[PendingCommand]:
+        """
+        Process a sensor status change for a direction.
+        Sensor OFFLINE marks the direction DEGRADED with minimum fixed-time service.
+        """
+        old_status = self.direction_sensor_status.get(direction, ControllerStatus.ONLINE)
+        self.direction_sensor_status[direction] = status
+
+        if status != old_status:
+            if status in (ControllerStatus.OFFLINE, ControllerStatus.DEGRADED):
+                self._audit(
+                    AuditEventType.SENSOR_OFFLINE,
+                    direction=direction,
+                    reason=f"Sensor {direction.value} {status.value} (direction marked DEGRADED with fixed-time service)",
+                )
+            elif status == ControllerStatus.ONLINE:
+                self._audit(
+                    AuditEventType.CONTROLLER_ONLINE,
+                    direction=direction,
+                    reason=f"Sensor {direction.value} returned ONLINE",
+                )
+        return []
 
     def _check_ack_timeouts(self) -> list[PendingCommand]:
         """Check for pending commands that have timed out."""

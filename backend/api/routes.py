@@ -308,24 +308,56 @@ async def submit_controller_event(
 
     elif st_upper in ("ONLINE", "OFFLINE", "DEGRADED"):
         c_status = ControllerStatus(st_upper)
+        dev_type = (payload.device_type or "SIGNAL_CONTROLLER").upper()
 
-        # Update controller simulator first so commands generated during status handling see new status
-        if actor.controller_port and hasattr(actor.controller_port, "set_status"):
-            actor.controller_port.set_status(c_status)
+        if dev_type == "SENSOR":
+            if not payload.direction:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Sensor status event must specify a 'direction'",
+                )
+            try:
+                direction = Direction(payload.direction.upper())
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid direction '{payload.direction}'",
+                )
 
-        await actor.handle_controller_status(c_status)
+            await actor.handle_sensor_status(direction, c_status)
 
-        # Persist device status
-        dev_id = f"ctrl-{payload.junction_id}"
-        await repo.save_device_status(
-            device_id=dev_id,
-            junction_id=payload.junction_id,
-            device_type="SIGNAL_CONTROLLER",
-            status=st_upper,
-            updated_at=time.time(),
-        )
+            dev_id = f"sensor-{payload.junction_id}-{direction.value}"
+            await repo.save_device_status(
+                device_id=dev_id,
+                junction_id=payload.junction_id,
+                device_type="SENSOR",
+                direction=direction.value,
+                status=st_upper,
+                updated_at=time.time(),
+            )
 
-        return ControllerEventResponse(status=st_upper, message=f"Controller status updated to {st_upper}")
+            return ControllerEventResponse(
+                status=st_upper,
+                message=f"Sensor {direction.value} status updated to {st_upper}",
+            )
+        else:
+            # Update controller simulator first so commands generated during status handling see new status
+            if actor.controller_port and hasattr(actor.controller_port, "set_status"):
+                actor.controller_port.set_status(c_status)
+
+            await actor.handle_controller_status(c_status)
+
+            # Persist device status
+            dev_id = f"ctrl-{payload.junction_id}"
+            await repo.save_device_status(
+                device_id=dev_id,
+                junction_id=payload.junction_id,
+                device_type="SIGNAL_CONTROLLER",
+                status=st_upper,
+                updated_at=time.time(),
+            )
+
+            return ControllerEventResponse(status=st_upper, message=f"Controller status updated to {st_upper}")
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,

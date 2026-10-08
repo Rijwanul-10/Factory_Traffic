@@ -125,6 +125,9 @@ class JunctionActor:
     async def handle_controller_status(self, status: ControllerStatus) -> None:
         await self.send_message("CONTROLLER_STATUS", {"status": status})
 
+    async def handle_sensor_status(self, direction: Direction, status: ControllerStatus) -> None:
+        await self.send_message("SENSOR_STATUS", {"direction": direction, "status": status})
+
     async def get_status(self) -> dict[str, Any]:
         return await self.send_message("GET_STATUS", {})
 
@@ -191,6 +194,12 @@ class JunctionActor:
             elif mtype == "CONTROLLER_STATUS":
                 status: ControllerStatus = payload["status"]
                 cmds = self.engine.process_controller_status(status)
+                msg.response_future.set_result(True)
+
+            elif mtype == "SENSOR_STATUS":
+                direction: Direction = payload["direction"]
+                status: ControllerStatus = payload["status"]
+                cmds = self.engine.process_sensor_status(direction, status)
                 msg.response_future.set_result(True)
 
             elif mtype == "GET_STATUS":
