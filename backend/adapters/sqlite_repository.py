@@ -50,8 +50,10 @@ class SqliteRepository(Repository):
     """
 
     def __init__(self, db_path: str = ":memory:"):
+        import threading
         self.db_path = db_path
         self._conn: Optional[sqlite3.Connection] = None
+        self._lock = threading.Lock()
         self._init_db()
 
     def _get_connection(self) -> sqlite3.Connection:
@@ -63,9 +65,10 @@ class SqliteRepository(Repository):
 
     def close(self) -> None:
         """Close database connection and release file locks."""
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        with self._lock:
+            if self._conn is not None:
+                self._conn.close()
+                self._conn = None
 
     def _init_db(self) -> None:
         """Run schema.sql to ensure all tables exist."""
@@ -81,9 +84,12 @@ class SqliteRepository(Repository):
             conn.commit()
 
     async def _run(self, func, *args, **kwargs) -> Any:
-        """Run a synchronous sqlite function in the asyncio default thread executor."""
+        """Run a synchronous sqlite function in the asyncio default thread executor with lock."""
         loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+        def locked_call():
+            with self._lock:
+                return func(*args, **kwargs)
+        return await loop.run_in_executor(None, locked_call)
 
     # ── Junction Config ──
 
